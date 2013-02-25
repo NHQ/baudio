@@ -20,18 +20,21 @@ function B (opts) {
     self.readable = true;
     self.size = opts.size || 2048;
     self.rate = opts.rate || 44000;
-    
+
     self.channels = [];
     self.t = 0;
     self.i = 0;
-    
+    self.duration = opts.duration || Infinity;
+    self.paused = true;
+
     process.nextTick(function () {
         if (self.paused) {
             self.on('resume', self.loop.bind(self));
         }
         else self.loop();
     });
-}
+
+};
 
 inherits(B, Stream);
 
@@ -71,6 +74,7 @@ B.prototype.push = function (ix, fn) {
         this.channels[ix] = [ 'float', [] ];
     }
     this.channels[ix][1].push(fn);
+    this.buffer = new Buffer(this.size * this.channels.length)
 };
 
 B.prototype.loop = function () {
@@ -95,9 +99,11 @@ B.prototype.loop = function () {
 };
 
 B.prototype.tick = function () {
+
     var self = this;
     
-    var buf = new Buffer(self.size * self.channels.length);
+    var buf = self.buffer //new Buffer(self.size * self.channels.length);
+
     function clamp (x) {
         return Math.max(Math.min(x, Math.pow(2,15)-1), -Math.pow(2,15));
     }
@@ -130,6 +136,8 @@ B.prototype.tick = function () {
     
     self.i += self.size / 2;
     self.t += self.size / 2 / self.rate;
+
+    if(self.t >= self.duration) self.destroy()
     
     return buf;
 };
@@ -147,7 +155,7 @@ function mergeArgs (opts, args) {
 
 B.prototype.play = function (opts) {
     // using the play command from http://sox.sourceforge.net/
-    
+
     var ps = spawn('play', mergeArgs(opts, {
         'c' : this.channels.length,
         'r' : this.rate,
@@ -155,11 +163,15 @@ B.prototype.play = function (opts) {
     }).concat('-'));
     
     this.pipe(ps.stdin);
+
+    if(this.paused) this.resume();
+
     return ps;
 };
 
 B.prototype.record = function (file, opts) {
     // using the sox command from http://sox.sourceforge.net/
+
     console.dir(mergeArgs(opts, {
         'c' : this.channels.length,
         'r' : this.rate,
@@ -173,6 +185,9 @@ B.prototype.record = function (file, opts) {
     }).concat('-', '-o', file));
     
     this.pipe(ps.stdin);
+
+    if(this.paused) this.resume();
+
     return ps;
 };
 
