@@ -24,7 +24,25 @@ function B (opts) {
     self.channels = [];
     self.t = 0;
     self.i = 0;
-    self.duration = opts.duration || Infinity;
+    self.duration = function(){return false};
+
+    if(opts.duration){
+      if(isNaN(opts.duration) && opts.duration.match('s')){ // in samples
+	var d = Number(opts.duration.split('s')[0])
+        self.duration = function(t, i){
+	  if(i >= d) return true
+	  else return false
+	}
+      }
+      else{
+	var d = opts.duration;
+	self.duration = function(t,i){
+	  if(t >= d) return true
+	  else return false
+	}
+      }
+    }
+
     self.paused = true;
 
     process.nextTick(function () {
@@ -44,6 +62,7 @@ B.prototype.end = function () {
 
 B.prototype.destroy = function () {
     this.destroyed = true;
+    
     this.emit('end');
 };
 
@@ -112,11 +131,10 @@ B.prototype.tick = function () {
         var ch = self.channels[(i / 2) % self.channels.length];
         var t = self.t + Math.floor(i / 2) / self.rate / self.channels.length;
         var counter = self.i + Math.floor(i / 2 / self.channels.length);
-        
         var value = 0;
         var n = 0;
         for (var j = 0; j < ch[1].length; j++) {
-            var x = ch[1][j].call(self, t, counter);
+            var x = ch[1][j](t, counter);
             if (!isNaN(x)) n += x;
         }
         n /= ch[1].length;
@@ -132,12 +150,16 @@ B.prototype.tick = function () {
         }
         
         buf.writeInt16LE(clamp(value), i);
+
+        if(this.duration(t, counter)) {
+	    self.destroy()
+	    break;
+        }
+
     }
     
     self.i += self.size / 2;
     self.t += self.size / 2 / self.rate;
-
-    if(self.t >= self.duration) self.destroy()
     
     return buf;
 };
